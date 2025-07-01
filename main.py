@@ -258,8 +258,7 @@ class CurveGridEditor(QWidget):
             return
         painter.setPen(QPen(QColor(60, 60, 60), 1))
         w, h = self.canvas.width(), self.canvas.height()
-        start_x, start_y = -self.view_offset.x() * self.zoom, - \
-            self.view_offset.y() * self.zoom
+        start_x, start_y = -self.view_offset.x() * self.zoom, -self.view_offset.y() * self.zoom
         x_offset, y_offset = start_x % self.zoom, start_y % self.zoom
         for x in range(int(x_offset), w, self.zoom):
             painter.drawLine(x, 0, x, h)
@@ -291,27 +290,20 @@ class CurveGridEditor(QWidget):
         for i, pt in enumerate(self.control_points):
             screen_pos = self.grid_to_screen(pt.pos)
             if self.show_tangents:
-                in_pt, out_pt = screen_pos + pt.in_tangent * \
-                    self.zoom, screen_pos + pt.out_tangent * self.zoom
-                in_color, out_color = (QColor("#ff5555"), QColor(
-                    "#ff5555")) if pt.mirrored else (QColor("#55ff55"), QColor("#5555ff"))
+                in_pt, out_pt = screen_pos + pt.in_tangent * self.zoom, screen_pos + pt.out_tangent * self.zoom
+                in_color, out_color = (QColor("#ff5555"), QColor("#ff5555")) if pt.mirrored else (QColor("#55ff55"), QColor("#5555ff"))
                 painter.setPen(QPen(in_color, 2))
                 painter.setBrush(in_color)
                 painter.drawLine(screen_pos, in_pt)
-                painter.drawEllipse(
-                    in_pt, self.handle_radius, self.handle_radius)
+                painter.drawEllipse(in_pt, self.handle_radius, self.handle_radius)
                 painter.setPen(QPen(out_color, 2))
                 painter.setBrush(out_color)
                 painter.drawLine(screen_pos, out_pt)
-                painter.drawEllipse(
-                    out_pt, self.handle_radius, self.handle_radius)
+                painter.drawEllipse(out_pt, self.handle_radius, self.handle_radius)
             is_selected = (i == self.selected_point_index)
-            painter.setBrush(
-                QColor("yellow") if is_selected else QColor("red"))
-            painter.setPen(
-                QPen(QColor("white") if is_selected else QColor("black"), 2))
-            painter.drawEllipse(
-                screen_pos, 8 if is_selected else 6, 8 if is_selected else 6)
+            painter.setBrush(QColor("yellow") if is_selected else QColor("red"))
+            painter.setPen(QPen(QColor("white") if is_selected else QColor("black"), 2))
+            painter.drawEllipse(screen_pos, 8 if is_selected else 6, 8 if is_selected else 6)
 
     def update_grid_with_curve(self):
         self.grid_blocks.clear()
@@ -327,10 +319,8 @@ class CurveGridEditor(QWidget):
             for t_step in range(steps + 1):
                 pt = self._cubic_bezier(
                     p0.pos, p1_abs, p2_abs, p3.pos, t_step / steps)
-                min_x, max_x = math.floor(
-                    pt.x() - radius), math.ceil(pt.x() + radius)
-                min_y, max_y = math.floor(
-                    pt.y() - radius), math.ceil(pt.y() + radius)
+                min_x, max_x = math.floor(pt.x() - radius), math.ceil(pt.x() + radius)
+                min_y, max_y = math.floor(pt.y() - radius), math.ceil(pt.y() + radius)
                 for y in range(min_y, max_y):
                     for x in range(min_x, max_x):
                         center_pt = QPointF(x + 0.5, y + 0.5)
@@ -344,8 +334,7 @@ class CurveGridEditor(QWidget):
         return u**3 * p0 + 3 * u**2 * t * p1 + 3 * u * t**2 * p2 + t**3 * p3
 
     def _adaptive_steps(self, p0, p1, p2, p3):
-        length = QLineF(p0, p1).length() + QLineF(p1,
-                                                  p2).length() + QLineF(p2, p3).length()
+        length = QLineF(p0, p1).length() + QLineF(p1, p2).length() + QLineF(p2, p3).length()
         return max(20, int(length / 2))
 
     def _save_state_for_undo(self):
@@ -374,12 +363,12 @@ class CurveGridEditor(QWidget):
         if len(self.control_points) < 2:
             return float('inf'), None, None
         min_dist = float('inf')
-        closest_segment_info = (None, None)
+        closest_segment_idx = None
+        closest_t = None
         for i in range(len(self.control_points) - 1):
             p0, p3 = self.control_points[i], self.control_points[i+1]
             p1_abs, p2_abs = p0.pos + p0.out_tangent, p3.pos + p3.in_tangent
-            steps = self._adaptive_steps(
-                p0.pos, p1_abs, p2_abs, p3.pos) // 4 + 1
+            steps = self._adaptive_steps(p0.pos, p1_abs, p2_abs, p3.pos)
             for j in range(steps + 1):
                 t = j / steps
                 curve_point_grid = self._cubic_bezier(
@@ -387,8 +376,10 @@ class CurveGridEditor(QWidget):
                 dist = QLineF(self.grid_to_screen(
                     curve_point_grid), QPointF(screen_pos)).length()
                 if dist < min_dist:
-                    min_dist, closest_segment_info = dist, (i, t)
-        return min_dist, closest_segment_info[0], closest_segment_info[1]
+                    min_dist = dist
+                    closest_segment_idx = i
+                    closest_t = t
+        return min_dist, closest_segment_idx, closest_t
 
     def _split_curve_segment(self, segment_idx, t):
         p0, p1 = self.control_points[segment_idx], self.control_points[segment_idx + 1]
@@ -399,10 +390,10 @@ class CurveGridEditor(QWidget):
         new_cp = ControlPoint(new_pos)
 
         u = 1.0 - t
-        deriv = 3*u*u*(p1_abs-p0_abs) + 6*u*t * \
-            (p2_abs-p1_abs) + 3*t*t*(p3_abs-p2_abs)
-        if QLineF(QPointF(0, 0), deriv).length() > 0.001:
-            deriv.normalize()
+        deriv = 3*u*u*(p1_abs-p0_abs) + 6*u*t*(p2_abs-p1_abs) + 3*t*t*(p3_abs-p2_abs)
+        length = QLineF(QPointF(0, 0), deriv).length()
+        if length > 0.001:
+            deriv = deriv / length
 
         new_cp.out_tangent = deriv * QLineF(p0.pos, p1.pos).length() * t * 0.5
         new_cp.in_tangent = -deriv * QLineF(p0.pos, p1.pos).length() * u * 0.5
