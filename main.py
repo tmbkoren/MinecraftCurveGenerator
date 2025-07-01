@@ -167,12 +167,14 @@ class CurveGridEditor(QWidget):
             painter.end()
 
     def canvas_mouse_press(self, event: QMouseEvent):
-        if self.is_locked:
-            return
         if event.button() == Qt.MouseButton.RightButton:
             self.panning = True
             self.last_pan_pos = event.pos()
             return
+
+        if self.is_locked:
+            return
+
         if event.button() == Qt.MouseButton.MiddleButton:
             self._delete_point_at(event.pos())
             return
@@ -220,8 +222,6 @@ class CurveGridEditor(QWidget):
         self.canvas.update()
 
     def canvas_mouse_move(self, event: QMouseEvent):
-        if self.is_locked:
-            return
         if self.panning:
             delta = QPointF(event.pos()) - self.last_pan_pos
             self.view_offset -= delta / self.zoom
@@ -229,7 +229,7 @@ class CurveGridEditor(QWidget):
             self.canvas.update()
             return
 
-        if not self.dragging_object:
+        if self.is_locked or not self.dragging_object:
             return
 
         drag_type, index = self.dragging_object
@@ -258,16 +258,14 @@ class CurveGridEditor(QWidget):
         self.canvas.update()
 
     def canvas_mouse_release(self, event: QMouseEvent):
-        if self.is_locked:
-            return
         if event.button() == Qt.MouseButton.RightButton:
             self.panning = False
         elif event.button() == Qt.MouseButton.LeftButton:
+            if self.is_locked:
+                return
             self.dragging_object = None
 
     def canvas_wheel_event(self, event):
-        if self.is_locked:
-            return
         steps = event.angleDelta().y() / 120
         self.set_zoom(self.zoom + steps)
 
@@ -490,6 +488,7 @@ class CurveGridEditor(QWidget):
 
     def set_curve_width(self, value):
         if self.is_locked:
+            self.width_slider.setValue(self.curve_width)
             return
         self.curve_width = value
         self.width_label.setText(f"Width: {value} blocks")
