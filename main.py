@@ -3,7 +3,7 @@ import math
 import json
 from PySide6.QtWidgets import (
     QApplication, QWidget, QSlider, QLabel, QVBoxLayout, QHBoxLayout, QFrame,
-    QSizePolicy, QPushButton, QMessageBox, QFileDialog
+    QSizePolicy, QPushButton, QMessageBox, QFileDialog, QCheckBox
 )
 from PySide6.QtGui import QPainter, QPen, QColor, QMouseEvent, QPixmap, QBrush, QKeySequence
 from PySide6.QtCore import Qt, QPointF, QRect, QLineF
@@ -59,6 +59,7 @@ class CurveGridEditor(QWidget):
         self.handle_radius = 6
         self.show_tangents = True
         self.dragging_object = None
+        self.is_locked = False
 
         # --- Drag State for Shift-Drag ---
         self.drag_start_in_tangent_abs = None
@@ -111,6 +112,11 @@ class CurveGridEditor(QWidget):
         self.export_button.clicked.connect(self.export_track)
         self.export_button.setFixedWidth(120)
 
+        self.lock_checkbox = QCheckBox("Lock Track")
+        self.lock_checkbox.stateChanged.connect(self.toggle_lock)
+
+        self.block_count_label = QLabel("Blocks: 0")
+
         instructions = QLabel(
             "Click empty space to extend path, Click on curve to insert point | Drag to move | Shift-Drag to fix tangents\n"
             "Shortcuts: S=Save | C=Clear | M=Toggle Mirror | Mid-Click=Delete | Ctrl+Z=Undo | Ctrl+Y=Redo"
@@ -127,6 +133,10 @@ class CurveGridEditor(QWidget):
         panel_layout.addSpacing(20)
         panel_layout.addWidget(self.import_button)
         panel_layout.addWidget(self.export_button)
+        panel_layout.addSpacing(20)
+        panel_layout.addWidget(self.lock_checkbox)
+        panel_layout.addSpacing(20)
+        panel_layout.addWidget(self.block_count_label)
         panel_layout.addStretch()
         panel_layout.addWidget(instructions)
         panel_layout.addStretch()
@@ -157,6 +167,8 @@ class CurveGridEditor(QWidget):
             painter.end()
 
     def canvas_mouse_press(self, event: QMouseEvent):
+        if self.is_locked:
+            return
         if event.button() == Qt.MouseButton.RightButton:
             self.panning = True
             self.last_pan_pos = event.pos()
@@ -198,6 +210,8 @@ class CurveGridEditor(QWidget):
         self._save_state_for_undo()
 
     def _start_drag(self, point_index):
+        if self.is_locked:
+            return
         self.selected_point_index = point_index
         point = self.control_points[point_index]
         self.drag_start_in_tangent_abs = point.pos + point.in_tangent
@@ -206,6 +220,8 @@ class CurveGridEditor(QWidget):
         self.canvas.update()
 
     def canvas_mouse_move(self, event: QMouseEvent):
+        if self.is_locked:
+            return
         if self.panning:
             delta = QPointF(event.pos()) - self.last_pan_pos
             self.view_offset -= delta / self.zoom
@@ -242,16 +258,22 @@ class CurveGridEditor(QWidget):
         self.canvas.update()
 
     def canvas_mouse_release(self, event: QMouseEvent):
+        if self.is_locked:
+            return
         if event.button() == Qt.MouseButton.RightButton:
             self.panning = False
         elif event.button() == Qt.MouseButton.LeftButton:
             self.dragging_object = None
 
     def canvas_wheel_event(self, event):
+        if self.is_locked:
+            return
         steps = event.angleDelta().y() / 120
         self.set_zoom(self.zoom + steps)
 
     def keyPressEvent(self, event):
+        if self.is_locked:
+            return
         if event.key() == Qt.Key.Key_S:
             self.export_track()
         elif event.key() == Qt.Key.Key_O:
@@ -322,6 +344,7 @@ class CurveGridEditor(QWidget):
     def update_grid_with_curve(self):
         self.grid_blocks.clear()
         if len(self.control_points) < 2:
+            self.block_count_label.setText("Blocks: 0")
             self.canvas.update()
             return
         points_to_draw = set()
@@ -341,6 +364,7 @@ class CurveGridEditor(QWidget):
                         if QLineF(pt, center_pt).length() <= radius:
                             points_to_draw.add((x, y))
         self.grid_blocks = points_to_draw
+        self.block_count_label.setText(f"Blocks: {len(self.grid_blocks)}")
         self.canvas.update()
 
     def _cubic_bezier(self, p0, p1, p2, p3, t):
@@ -352,17 +376,23 @@ class CurveGridEditor(QWidget):
         return max(20, int(length / 2))
 
     def _save_state_for_undo(self):
+        if self.is_locked:
+            return
         self.undo_stack.append([pt.clone() for pt in self.control_points])
         self.redo_stack.clear()
         if len(self.undo_stack) > 50:
             self.undo_stack.pop(0)
 
     def undo(self):
+        if self.is_locked:
+            return
         if len(self.undo_stack) > 1:
             self.redo_stack.append(self.undo_stack.pop())
             self._restore_state(self.undo_stack[-1])
 
     def redo(self):
+        if self.is_locked:
+            return
         if self.redo_stack:
             state = self.redo_stack.pop()
             self.undo_stack.append(state)
@@ -396,6 +426,8 @@ class CurveGridEditor(QWidget):
         return min_dist, closest_segment_idx, closest_t
 
     def _split_curve_segment(self, segment_idx, t):
+        if self.is_locked:
+            return
         p0, p1 = self.control_points[segment_idx], self.control_points[segment_idx + 1]
         p0_abs, p3_abs = p0.pos, p1.pos
         p1_abs, p2_abs = p0_abs + p0.out_tangent, p3_abs + p1.in_tangent
@@ -419,6 +451,8 @@ class CurveGridEditor(QWidget):
         self.selected_point_index = segment_idx + 1
 
     def _add_point_at_end(self, screen_pos):
+        if self.is_locked:
+            return
         grid_pos = self.screen_to_grid(screen_pos)
         if not self.control_points:
             self.control_points.append(ControlPoint(grid_pos))
@@ -436,6 +470,8 @@ class CurveGridEditor(QWidget):
             self.selected_point_index = len(self.control_points) - 1
 
     def _delete_point_at(self, screen_pos):
+        if self.is_locked:
+            return
         for i, pt in reversed(list(enumerate(self.control_points))):
             if QLineF(self.grid_to_screen(pt.pos), QPointF(screen_pos)).length() < self.handle_radius * 2:
                 del self.control_points[i]
@@ -445,12 +481,16 @@ class CurveGridEditor(QWidget):
                 return
 
     def _toggle_mirror(self):
+        if self.is_locked:
+            return
         pt = self.control_points[self.selected_point_index]
         pt.mirrored = not pt.mirrored
         self.canvas.update()
         self._save_state_for_undo()
 
     def set_curve_width(self, value):
+        if self.is_locked:
+            return
         self.curve_width = value
         self.width_label.setText(f"Width: {value} blocks")
         self.update_grid_with_curve()
@@ -468,6 +508,8 @@ class CurveGridEditor(QWidget):
         self.canvas.update()
 
     def clear_points(self):
+        if self.is_locked:
+            return
         self.control_points.clear()
         self.selected_point_index = None
         self.update_grid_with_curve()
@@ -501,6 +543,8 @@ class CurveGridEditor(QWidget):
             QMessageBox.critical(self, "Export Error", f"Could not save track: {e}")
 
     def import_track(self):
+        if self.is_locked:
+            return
         path, _ = QFileDialog.getOpenFileName(self, "Open Track", "", "Minecraft Track (*.mtrack);;All Files (*)")
         if not path:
             return
@@ -542,6 +586,9 @@ class CurveGridEditor(QWidget):
     def grid_to_screen_rect(self, grid_pos):
         top_left = self.grid_to_screen(grid_pos)
         return QRect(int(top_left.x()), int(top_left.y()), self.zoom, self.zoom)
+
+    def toggle_lock(self, state):
+        self.is_locked = state == Qt.CheckState.Checked.value
 
 
 if __name__ == "__main__":
