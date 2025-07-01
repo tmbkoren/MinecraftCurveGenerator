@@ -1,8 +1,9 @@
 import sys
 import math
+import json
 from PySide6.QtWidgets import (
     QApplication, QWidget, QSlider, QLabel, QVBoxLayout, QHBoxLayout, QFrame,
-    QSizePolicy, QPushButton, QMessageBox
+    QSizePolicy, QPushButton, QMessageBox, QFileDialog
 )
 from PySide6.QtGui import QPainter, QPen, QColor, QMouseEvent, QPixmap, QBrush, QKeySequence
 from PySide6.QtCore import Qt, QPointF, QRect, QLineF
@@ -102,6 +103,14 @@ class CurveGridEditor(QWidget):
         self.tangent_button.clicked.connect(self.toggle_tangents)
         self.tangent_button.setFixedWidth(120)
 
+        self.import_button = QPushButton("Import")
+        self.import_button.clicked.connect(self.import_track)
+        self.import_button.setFixedWidth(120)
+
+        self.export_button = QPushButton("Export")
+        self.export_button.clicked.connect(self.export_track)
+        self.export_button.setFixedWidth(120)
+
         instructions = QLabel(
             "Click empty space to extend path, Click on curve to insert point | Drag to move | Shift-Drag to fix tangents\n"
             "Shortcuts: S=Save | C=Clear | M=Toggle Mirror | Mid-Click=Delete | Ctrl+Z=Undo | Ctrl+Y=Redo"
@@ -115,6 +124,9 @@ class CurveGridEditor(QWidget):
         panel_layout.addWidget(self.zoom_slider)
         panel_layout.addSpacing(20)
         panel_layout.addWidget(self.tangent_button)
+        panel_layout.addSpacing(20)
+        panel_layout.addWidget(self.import_button)
+        panel_layout.addWidget(self.export_button)
         panel_layout.addStretch()
         panel_layout.addWidget(instructions)
         panel_layout.addStretch()
@@ -241,7 +253,9 @@ class CurveGridEditor(QWidget):
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_S:
-            self.export_image()
+            self.export_track()
+        elif event.key() == Qt.Key.Key_O:
+            self.import_track()
         elif event.key() == Qt.Key.Key_C:
             self.clear_points()
         elif event.key() == Qt.Key.Key_T:
@@ -458,6 +472,57 @@ class CurveGridEditor(QWidget):
         self.selected_point_index = None
         self.update_grid_with_curve()
         self._save_state_for_undo()
+
+    def export_track(self):
+        if not self.control_points:
+            QMessageBox.warning(self, "Export Error", "There is nothing to export.")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(self, "Save Track", "", "Minecraft Track (*.mtrack);;All Files (*)")
+        if not path:
+            return
+
+        data = {
+            'control_points': [
+                {
+                    'pos': [p.pos.x(), p.pos.y()],
+                    'in_tangent': [p.in_tangent.x(), p.in_tangent.y()],
+                    'out_tangent': [p.out_tangent.x(), p.out_tangent.y()],
+                    'mirrored': p.mirrored
+                } for p in self.control_points
+            ]
+        }
+
+        try:
+            with open(path, 'w') as f:
+                json.dump(data, f, indent=4)
+            QMessageBox.information(self, "Export Successful", f"Track saved to {path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Could not save track: {e}")
+
+    def import_track(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Open Track", "", "Minecraft Track (*.mtrack);;All Files (*)")
+        if not path:
+            return
+
+        try:
+            with open(path, 'r') as f:
+                data = json.load(f)
+
+            self.control_points.clear()
+            for p_data in data['control_points']:
+                pos = QPointF(*p_data['pos'])
+                cp = ControlPoint(pos)
+                cp.in_tangent = QPointF(*p_data['in_tangent'])
+                cp.out_tangent = QPointF(*p_data['out_tangent'])
+                cp.mirrored = p_data['mirrored']
+                self.control_points.append(cp)
+
+            self.update_grid_with_curve()
+            self._save_state_for_undo()
+            QMessageBox.information(self, "Import Successful", f"Track loaded from {path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Import Error", f"Could not load track: {e}")
 
     def export_image(self):
         pixmap = self.canvas.grab()
