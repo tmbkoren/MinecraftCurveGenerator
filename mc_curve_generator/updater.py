@@ -92,41 +92,60 @@ def create_and_run_updater_script(new_path, old_path):
     """
     app_dir = os.path.dirname(old_path)
     app_basename = os.path.basename(old_path)
+    new_basename = os.path.basename(new_path)
 
-    # For debugging, we'll show the console and pause on exit.
+    # A more robust updater script that attempts to kill the process if the file is locked.
     script_content = f"""
     @echo off
-    echo Waiting for application to close...
+    title Application Updater
+    echo This window will close automatically after the update.
+    echo.
+
+    echo --- Step 1: Waiting for application to close ---
+    echo Waiting 5 seconds for a graceful shutdown...
     timeout /t 5 /nobreak > nul
 
-    echo Changing to application directory...
+    echo.
+    echo --- Step 2: Attempting to replace executable ---
     cd /d "{app_dir}"
+    move /y "{new_path}" "{old_path}"
 
-    echo Replacing executable...
-    echo   Source: "{new_path}"
-    echo   Destination: "{old_path}"
+    if not errorlevel 1 (
+        echo Success! Relaunching application...
+        goto :relaunch
+    )
+
+    echo.
+    echo --- Step 3: Replacement failed, attempting forceful shutdown ---
+    echo The application file is still locked.
+    echo Attempting to terminate the process: {app_basename}
+    taskkill /f /im "{app_basename}" /t > nul
+    
+    echo Waiting 3 more seconds...
+    timeout /t 3 /nobreak > nul
+
+    echo.
+    echo --- Step 4: Final attempt to replace executable ---
     move /y "{new_path}" "{old_path}"
 
     if errorlevel 1 (
         echo.
-        echo ERROR: Failed to replace the executable!
-        echo It might still be running or locked by another process.
+        echo ERROR: Failed to replace the executable after a second attempt.
+        echo Please close the application manually and run the updater again.
+        echo The new version is downloaded as: {new_basename}
         pause
         exit /b 1
     )
 
+    :relaunch
     echo.
-    echo Update successful! Relaunching application...
+    echo --- Step 5: Relaunching application ---
     set _MEIPASS=
     set _MEIPASS2=
     start "" "{app_basename}"
 
-    echo.
-    echo Closing this window...
-    timeout /t 2 > nul
-
     :: Self-delete the script
-    del "%~f0"
+    (goto) 2>nul & del "%~f0"
     """
 
     script_path = os.path.join(app_dir, "updater.bat")
