@@ -90,29 +90,34 @@ def create_and_run_updater_script(new_path, old_path):
     Creates and executes a batch script to replace the old executable.
     The script runs independently to avoid file locking and environment issues.
     """
+    app_dir = os.path.dirname(old_path)
+    app_basename = os.path.basename(old_path)
+
     script_content = f"""
     @echo off
     echo Waiting for application to close...
     timeout /t 3 /nobreak > nul
 
+    echo Changing to application directory...
+    cd /d "{app_dir}"
+
     echo Replacing executable...
     move /y "{new_path}" "{old_path}"
     if errorlevel 1 (
-        echo Failed to replace the executable. Please update manually.
-        pause
+        echo Failed to replace the executable. It may be locked.
         exit /b 1
     )
 
     echo Relaunching application in a clean environment...
-    :: Unset the PyInstaller temp folder variable to avoid conflicts
     set _MEIPASS=
-    start "" "{old_path}"
+    set _MEIPASS2=
+    start "" "{app_basename}"
 
     :: Self-delete the script
     del "%~f0"
     """
 
-    script_path = os.path.join(os.path.dirname(old_path), "updater.bat")
+    script_path = os.path.join(app_dir, "updater.bat")
     with open(script_path, 'w') as f:
         f.write(script_content)
 
