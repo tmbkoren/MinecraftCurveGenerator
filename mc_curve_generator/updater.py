@@ -45,9 +45,11 @@ def show_update_dialog(release_info, parent):
     msg_box = QMessageBox(parent)
     msg_box.setIcon(QMessageBox.Icon.Information)
     msg_box.setWindowTitle("Update Available")
-    msg_box.setText(f"A new version ({latest_version}) is available! Do you want to update?")
+    msg_box.setText(
+        f"A new version ({latest_version}) is available! Do you want to update?")
     msg_box.setInformativeText(f"\nRelease Notes:\n{release_notes}")
-    msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+    msg_box.setStandardButtons(
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
     msg_box.setDefaultButton(QMessageBox.StandardButton.Yes)
 
     if msg_box.exec() == QMessageBox.StandardButton.Yes:
@@ -55,15 +57,12 @@ def show_update_dialog(release_info, parent):
 
 
 def download_and_apply_update(release_info, parent):
-    """
-    Downloads the new executable and runs the self-replacement script.
-    """
     assets = release_info.get("assets", [])
     if not assets:
-        QMessageBox.critical(parent, "Update Error", "No assets found for the latest release.")
+        QMessageBox.critical(parent, "Update Error",
+                             "No assets found for the latest release.")
         return
 
-    # Assuming the executable is the first asset
     asset_url = assets[0]["browser_download_url"]
     new_exe_name = assets[0]["name"]
 
@@ -71,86 +70,67 @@ def download_and_apply_update(release_info, parent):
         response = requests.get(asset_url, stream=True)
         response.raise_for_status()
 
-        # Save the new executable with a temporary name
-        temp_exe_path = os.path.join(os.path.dirname(sys.executable), f"_new_{new_exe_name}")
+        temp_exe_path = os.path.join(os.path.dirname(
+            sys.executable), f"_new_{new_exe_name}")
         with open(temp_exe_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
 
-        create_and_run_updater_script(temp_exe_path, sys.executable)
+        old_exe = os.path.abspath(sys.executable)
+        create_and_run_updater_script(temp_exe_path, old_exe)
+
+        # Exit BEFORE launching the updater to avoid locking
         QCoreApplication.quit()
 
     except requests.RequestException as e:
-        QMessageBox.critical(parent, "Download Error", f"Failed to download update: {e}")
+        QMessageBox.critical(parent, "Download Error",
+                             f"Failed to download update: {e}")
     except IOError as e:
-        QMessageBox.critical(parent, "File Error", f"Failed to save update: {e}")
+        QMessageBox.critical(parent, "File Error",
+                             f"Failed to save update: {e}")
+
 
 def create_and_run_updater_script(new_path, old_path):
     """
     Creates and executes a batch script to replace the old executable.
-    The script runs independently to avoid file locking and environment issues.
+    The script runs independently to avoid file locking issues.
     """
     app_dir = os.path.dirname(old_path)
     app_basename = os.path.basename(old_path)
-    new_basename = os.path.basename(new_path)
 
-    # A more robust updater script that attempts to kill the process if the file is locked.
-    script_content = f"""
+    # This script waits, ensures the original process is killed,
+    # replaces the file, and relaunches the app.
+    script_content = f'''
     @echo off
-    title Application Updater
-    echo This window will close automatically after the update.
-    echo.
+    title Updating Application...
 
-    echo --- Step 1: Waiting for application to close ---
-    echo Waiting 5 seconds for a graceful shutdown...
-    timeout /t 5 /nobreak > nul
+    :: 1. Wait 4 seconds for the main application to close gracefully.
+    timeout /t 4 /nobreak > nul
 
-    echo.
-    echo --- Step 2: Attempting to replace executable ---
+    :: 2. As a fallback, forcefully terminate the process if it's still locked.
+    ::    Redirect output to nul as it may return an error if the process is already gone.
+    taskkill /f /im "{app_basename}" /t > nul 2>&1
+
+    :: 3. Change to the application's directory to ensure paths are correct.
     cd /d "{app_dir}"
+
+    :: 4. Replace the old executable with the new one.
     move /y "{new_path}" "{old_path}"
 
-    if not errorlevel 1 (
-        echo Success! Relaunching application...
-        goto :relaunch
-    )
-
-    echo.
-    echo --- Step 3: Replacement failed, attempting forceful shutdown ---
-    echo The application file is still locked.
-    echo Attempting to terminate the process: {app_basename}
-    taskkill /f /im "{app_basename}" /t > nul
-    
-    echo Waiting 3 more seconds...
-    timeout /t 3 /nobreak > nul
-
-    echo.
-    echo --- Step 4: Final attempt to replace executable ---
-    move /y "{new_path}" "{old_path}"
-
-    if errorlevel 1 (
-        echo.
-        echo ERROR: Failed to replace the executable after a second attempt.
-        echo Please close the application manually and run the updater again.
-        echo The new version is downloaded as: {new_basename}
-        pause
-        exit /b 1
-    )
-
-    :relaunch
-    echo.
-    echo --- Step 5: Relaunching application ---
-    set _MEIPASS=
-    set _MEIPASS2=
+    :: 5. Relaunch the updated application.
     start "" "{app_basename}"
 
-    :: Self-delete the script
+    :: 6. Self-delete the updater script.
     (goto) 2>nul & del "%~f0"
-    """
+    '''
 
     script_path = os.path.join(app_dir, "updater.bat")
-    with open(script_path, 'w') as f:
+    with open(script_path, 'w', encoding='utf-8') as f:
         f.write(script_content)
 
-    # Launch the script in a new console window to make it visible
-    subprocess.Popen(script_path, creationflags=subprocess.CREATE_NEW_CONSOLE)
+    # Launch the script in a new, completely separate process.
+    # This allows the main application to exit completely before the script runs.
+    subprocess.Popen(
+        [script_path],
+        creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+    )
