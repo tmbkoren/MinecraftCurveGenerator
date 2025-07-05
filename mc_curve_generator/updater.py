@@ -117,4 +117,4 @@ def create_and_run_updater_script(new_path, old_path):
         f.write(script_content)
 
     # Launch the script in a new, completely separate process
-    subprocess.Popen(script_path, creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP, close_fds=True)
+    subprocess.Popen(script_path, creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
