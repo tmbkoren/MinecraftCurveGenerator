@@ -78,11 +78,6 @@ def download_and_apply_update(release_info, parent):
 
         old_exe = os.path.abspath(sys.executable)
         create_and_run_updater_script(temp_exe_path, sys.executable)
-
-        # Add a small delay to ensure the updater script has time to launch
-        # before the main application quits completely.
-        import time
-        time.sleep(1)
         QCoreApplication.quit()
 
     except requests.RequestException as e:
@@ -95,17 +90,15 @@ def download_and_apply_update(release_info, parent):
 
 def create_and_run_updater_script(new_path, old_path):
     """
-    Creates and executes a batch script to replace the old executable.
-    The script runs independently to avoid file locking issues.
+    Creates and executes a batch script to replace the old executable and
+    notify the user to restart the application manually.
     """
     app_dir = os.path.dirname(old_path)
     app_basename = os.path.basename(old_path)
 
-    # This script launches the new application in a completely isolated process
-    # to prevent environment variable inheritance issues (e.g., _MEIPASS).
     script_content = f'''
     @echo off
-    title Updating Application...
+    title Application Updated Successfully
 
     :: 1. Wait for the main application to close.
     timeout /t 4 /nobreak > nul
@@ -119,10 +112,21 @@ def create_and_run_updater_script(new_path, old_path):
     :: 4. Replace the old executable with the new one.
     move /y "{new_path}" "{old_path}"
 
-    :: 5. Relaunch in a truly clean, isolated process.
-    ::    This starts a new command prompt that immediately starts the app and exits,
-    ::    ensuring no environment variables from this script are inherited.
-    start "" cmd /c ""{app_basename}""
+    if errorlevel 1 (
+        echo.
+        echo ERROR: Failed to update the application file.
+        echo Please close the application manually and try again.
+        pause
+        exit /b 1
+    )
+
+    :: 5. Notify the user that the update is complete.
+    echo.
+    echo Update Successful!
+    echo.
+    echo Please start the application again manually.
+    echo.
+    pause
 
     :: 6. Self-delete the updater script.
     (goto) 2>nul & del "%~f0"
@@ -132,8 +136,5 @@ def create_and_run_updater_script(new_path, old_path):
     with open(script_path, 'w', encoding='utf-8') as f:
         f.write(script_content)
 
-    # Launch the script in a new, completely separate process.
-    subprocess.Popen(
-        [script_path],
-        creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-    )
+    # Launch the script in a new console window so the user sees the message.
+    subprocess.Popen([script_path], creationflags=subprocess.CREATE_NEW_CONSOLE)
