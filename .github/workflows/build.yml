@@ -24,7 +24,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Build executable
-        run: pyinstaller main.py --noconfirm --onefile --name MinecraftCurveGenerator
+        run: pyinstaller main.pyw --noconfirm --onefile --name MinecraftCurveGenerator
 
       - name: Upload to GitHub Releases
         uses: softprops/action-gh-release@v2
