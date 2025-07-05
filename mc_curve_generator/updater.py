@@ -93,25 +93,37 @@ def create_and_run_updater_script(new_path, old_path):
     app_dir = os.path.dirname(old_path)
     app_basename = os.path.basename(old_path)
 
+    # For debugging, we'll show the console and pause on exit.
     script_content = f"""
     @echo off
     echo Waiting for application to close...
-    timeout /t 3 /nobreak > nul
+    timeout /t 5 /nobreak > nul
 
     echo Changing to application directory...
     cd /d "{app_dir}"
 
     echo Replacing executable...
+    echo   Source: "{new_path}"
+    echo   Destination: "{old_path}"
     move /y "{new_path}" "{old_path}"
+
     if errorlevel 1 (
-        echo Failed to replace the executable. It may be locked.
+        echo.
+        echo ERROR: Failed to replace the executable!
+        echo It might still be running or locked by another process.
+        pause
         exit /b 1
     )
 
-    echo Relaunching application in a clean environment...
+    echo.
+    echo Update successful! Relaunching application...
     set _MEIPASS=
     set _MEIPASS2=
     start "" "{app_basename}"
+
+    echo.
+    echo Closing this window...
+    timeout /t 2 > nul
 
     :: Self-delete the script
     del "%~f0"
@@ -121,5 +133,5 @@ def create_and_run_updater_script(new_path, old_path):
     with open(script_path, 'w') as f:
         f.write(script_content)
 
-    # Launch the script in a new, completely separate process
-    subprocess.Popen(script_path, creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
+    # Launch the script in a new console window to make it visible
+    subprocess.Popen(script_path, creationflags=subprocess.CREATE_NEW_CONSOLE)
