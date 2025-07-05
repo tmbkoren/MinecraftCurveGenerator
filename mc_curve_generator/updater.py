@@ -77,9 +77,12 @@ def download_and_apply_update(release_info, parent):
                 f.write(chunk)
 
         old_exe = os.path.abspath(sys.executable)
-        create_and_run_updater_script(temp_exe_path, old_exe)
+        create_and_run_updater_script(temp_exe_path, sys.executable)
 
-        # Exit BEFORE launching the updater to avoid locking
+        # Add a small delay to ensure the updater script has time to launch
+        # before the main application quits completely.
+        import time
+        time.sleep(1)
         QCoreApplication.quit()
 
     except requests.RequestException as e:
@@ -116,10 +119,8 @@ def create_and_run_updater_script(new_path, old_path):
     :: 4. Replace the old executable with the new one.
     move /y "{new_path}" "{old_path}"
 
-    :: 5. Relaunch the updated application in a clean environment.
-    set _MEIPASS=
-    set _MEIPASS2=
-    start "" "{app_basename}"
+    :: 5. Relaunch in a clean environment using cmd /c to isolate the new process.
+    cmd /c "cd /d \"{app_dir}\" & set _MEIPASS=& set _MEIPASS2=& start \"\" \"{app_basename}\""
 
     :: 6. Self-delete the updater script.
     (goto) 2>nul & del "%~f0"
