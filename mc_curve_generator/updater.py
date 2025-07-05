@@ -101,8 +101,8 @@ def create_and_run_updater_script(new_path, old_path):
     app_dir = os.path.dirname(old_path)
     app_basename = os.path.basename(old_path)
 
-    # This script waits, ensures the original process is killed,
-    # replaces the file, and relaunches the app in a clean environment.
+    # This script launches the new application in a completely isolated process
+    # to prevent environment variable inheritance issues (e.g., _MEIPASS).
     script_content = f'''
     @echo off
     title Updating Application...
@@ -119,8 +119,10 @@ def create_and_run_updater_script(new_path, old_path):
     :: 4. Replace the old executable with the new one.
     move /y "{new_path}" "{old_path}"
 
-    :: 5. Relaunch in a clean environment using cmd /c to isolate the new process.
-    cmd /c "cd /d \"{app_dir}\" & set _MEIPASS=& set _MEIPASS2=& start \"\" \"{app_basename}\""
+    :: 5. Relaunch in a truly clean, isolated process.
+    ::    This starts a new command prompt that immediately starts the app and exits,
+    ::    ensuring no environment variables from this script are inherited.
+    start "" cmd /c ""{app_basename}""
 
     :: 6. Self-delete the updater script.
     (goto) 2>nul & del "%~f0"
