@@ -1,4 +1,3 @@
-# Handles application updates by checking for new releases on GitHub.
 import sys
 import os
 import requests
@@ -86,19 +85,30 @@ def download_and_apply_update(release_info, parent):
     except IOError as e:
         QMessageBox.critical(parent, "File Error", f"Failed to save update: {e}")
 
-
 def create_and_run_updater_script(new_path, old_path):
     """
     Creates and executes a batch script to replace the old executable.
+    The script runs independently to avoid file locking and environment issues.
     """
     script_content = f"""
     @echo off
     echo Waiting for application to close...
-    timeout /t 2 /nobreak > nul
+    timeout /t 3 /nobreak > nul
+
     echo Replacing executable...
     move /y "{new_path}" "{old_path}"
-    echo Relaunching application...
+    if errorlevel 1 (
+        echo Failed to replace the executable. Please update manually.
+        pause
+        exit /b 1
+    )
+
+    echo Relaunching application in a clean environment...
+    :: Unset the PyInstaller temp folder variable to avoid conflicts
+    set _MEIPASS=
     start "" "{old_path}"
+
+    :: Self-delete the script
     del "%~f0"
     """
 
@@ -106,4 +116,5 @@ def create_and_run_updater_script(new_path, old_path):
     with open(script_path, 'w') as f:
         f.write(script_content)
 
-    subprocess.Popen(script_path, creationflags=subprocess.CREATE_NEW_CONSOLE)
+    # Launch the script in a new, completely separate process
+    subprocess.Popen(script_path, creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP, close_fds=True)
