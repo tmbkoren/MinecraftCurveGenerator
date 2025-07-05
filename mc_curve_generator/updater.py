@@ -99,25 +99,26 @@ def create_and_run_updater_script(new_path, old_path):
     app_basename = os.path.basename(old_path)
 
     # This script waits, ensures the original process is killed,
-    # replaces the file, and relaunches the app.
+    # replaces the file, and relaunches the app in a clean environment.
     script_content = f'''
     @echo off
     title Updating Application...
 
-    :: 1. Wait 4 seconds for the main application to close gracefully.
+    :: 1. Wait for the main application to close.
     timeout /t 4 /nobreak > nul
 
     :: 2. As a fallback, forcefully terminate the process if it's still locked.
-    ::    Redirect output to nul as it may return an error if the process is already gone.
     taskkill /f /im "{app_basename}" /t > nul 2>&1
 
-    :: 3. Change to the application's directory to ensure paths are correct.
+    :: 3. Change to the application's directory.
     cd /d "{app_dir}"
 
     :: 4. Replace the old executable with the new one.
     move /y "{new_path}" "{old_path}"
 
-    :: 5. Relaunch the updated application.
+    :: 5. Relaunch the updated application in a clean environment.
+    set _MEIPASS=
+    set _MEIPASS2=
     start "" "{app_basename}"
 
     :: 6. Self-delete the updater script.
@@ -129,7 +130,6 @@ def create_and_run_updater_script(new_path, old_path):
         f.write(script_content)
 
     # Launch the script in a new, completely separate process.
-    # This allows the main application to exit completely before the script runs.
     subprocess.Popen(
         [script_path],
         creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
