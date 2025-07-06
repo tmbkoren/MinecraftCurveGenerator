@@ -35,21 +35,17 @@ class ControlPanel(QFrame):
         self.tangent_button.setCheckable(True)
         self.tangent_button.setFixedWidth(120)
 
-        self.import_button = QPushButton("Import")
-        self.import_button.setFixedWidth(120)
+        self.mode_button = QPushButton("Build Mode")
+        self.mode_button.setCheckable(True)
+        self.mode_button.setFixedWidth(120)
 
-        self.export_button = QPushButton("Export")
-        self.export_button.setFixedWidth(120)
-
-        self.lock_checkbox = QCheckBox("Lock Track")
+        self.reset_highlight_button = QPushButton("Reset Highlight")
+        self.reset_highlight_button.setFixedWidth(120)
+        self.reset_highlight_button.setVisible(False)  # Initially hidden
 
         self.block_count_label = QLabel("Blocks: 0")
-
-        instructions = QLabel(
-            "Click empty space to extend path, Click on curve to insert point | Drag to move | Shift-Drag to fix tangents\n"
-            "Shortcuts: S=Save | C=Clear | M=Toggle Mirror | Mid-Click=Delete | Ctrl+Z=Undo | Ctrl+Y=Redo"
-        )
-        instructions.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.highlight_count_label = QLabel("Highlighted: 0")
+        self.highlight_count_label.setVisible(False) # Initially hidden
 
         layout.addWidget(self.width_label)
         layout.addWidget(self.width_slider)
@@ -59,12 +55,9 @@ class ControlPanel(QFrame):
         layout.addSpacing(20)
         layout.addWidget(self.tangent_button)
         layout.addSpacing(20)
-        layout.addWidget(self.import_button)
-        layout.addWidget(self.export_button)
-        layout.addSpacing(20)
-        layout.addWidget(self.lock_checkbox)
+        layout.addWidget(self.mode_button)
+        layout.addWidget(self.reset_highlight_button)
         layout.addSpacing(20)
         layout.addWidget(self.block_count_label)
-        layout.addStretch()
-        layout.addWidget(instructions)
+        layout.addWidget(self.highlight_count_label)
         layout.addStretch()

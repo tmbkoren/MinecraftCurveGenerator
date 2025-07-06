@@ -4,7 +4,7 @@ Canvas widget for drawing and interacting with the Bézier curve.
 import math
 from PySide6.QtWidgets import QWidget, QSizePolicy
 from PySide6.QtGui import QPainter, QPen, QColor, QMouseEvent, QBrush
-from PySide6.QtCore import Qt, QPointF, QRect, QLineF, Signal
+from PySide6.QtCore import Qt, QPoint, QPointF, QRect, QLineF, Signal
 from typing import Optional
 
 from ..curve_model import CurveModel
@@ -18,12 +18,15 @@ class Canvas(QWidget):
     """
     blockCountChanged = Signal(int)
     zoomChanged = Signal(int)
+    mouseMoved = Signal(QPoint)
+    highlightCountChanged = Signal(int)
 
     def __init__(self, model: CurveModel, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.model = model
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setMouseTracking(True)
 
         # --- View Settings ---
         self.view_offset = QPointF(500, 500)
@@ -34,6 +37,7 @@ class Canvas(QWidget):
 
         # --- Display Settings ---
         self.grid_blocks = set()
+        self.highlighted_blocks = set()
         self.curve_width = 3
         self.handle_radius = 6
         self.show_tangents = True
@@ -50,6 +54,7 @@ class Canvas(QWidget):
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             painter.fillRect(self.rect(), QColor("#282c34"))
             self._draw_track_blocks(painter)
+            self._draw_highlighted_blocks(painter)
             self._draw_grid_lines(painter)
             self._draw_curve(painter)
             self._draw_control_points(painter)
@@ -63,6 +68,8 @@ class Canvas(QWidget):
             return
 
         if self.is_locked:
+            if event.button() == Qt.MouseButton.LeftButton:
+                self._toggle_highlight(event.pos())
             return
 
         if event.button() == Qt.MouseButton.MiddleButton:
@@ -112,6 +119,10 @@ class Canvas(QWidget):
         self.update()
 
     def mouseMoveEvent(self, event: QMouseEvent):
+        grid_pos_float = self.screen_to_grid(event.pos())
+        grid_pos_int = QPoint(int(grid_pos_float.x()), int(grid_pos_float.y()))
+        self.mouseMoved.emit(grid_pos_int)
+
         if self.panning:
             delta = QPointF(event.pos()) - self.last_pan_pos
             self.view_offset -= delta * (1.0 / self.zoom)
@@ -175,6 +186,14 @@ class Canvas(QWidget):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor("#a0e8ff"))
         for pos_tuple in self.grid_blocks:
+            rect = self.grid_to_screen_rect(QPointF(*pos_tuple))
+            if self.rect().intersects(rect):
+                painter.drawRect(rect)
+
+    def _draw_highlighted_blocks(self, painter):
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(255, 0, 0, 100))  # Semi-transparent red
+        for pos_tuple in self.highlighted_blocks:
             rect = self.grid_to_screen_rect(QPointF(*pos_tuple))
             if self.rect().intersects(rect):
                 painter.drawRect(rect)
@@ -315,6 +334,24 @@ class Canvas(QWidget):
                 self.update_grid_with_curve()
                 self.model._save_state_for_undo()
                 return
+
+    def _toggle_highlight(self, screen_pos):
+        grid_pos_float = self.screen_to_grid(screen_pos)
+        grid_pos_tuple = (int(grid_pos_float.x()), int(grid_pos_float.y()))
+
+        if grid_pos_tuple in self.grid_blocks:
+            if grid_pos_tuple in self.highlighted_blocks:
+                self.highlighted_blocks.remove(grid_pos_tuple)
+            else:
+                self.highlighted_blocks.add(grid_pos_tuple)
+            
+            self.highlightCountChanged.emit(len(self.highlighted_blocks))
+            self.update()
+
+    def clear_highlights(self):
+        self.highlighted_blocks.clear()
+        self.highlightCountChanged.emit(0)
+        self.update()
 
     def set_zoom(self, value):
         self.zoom = max(self.min_zoom, min(int(value), self.max_zoom))
